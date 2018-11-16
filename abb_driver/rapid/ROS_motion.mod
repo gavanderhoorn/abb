@@ -52,23 +52,36 @@ PROC main()
 
         ! execute all points in this trajectory
         IF (trajectory_size > 0) THEN
+
+            ! make sure first point in the trajectory is equal to current state
+            target.robax := trajectory{1}.joint_pos;
+            target.extax := trajectory{1}.extax_pos;
+            IF ( NOT is_near(target, 0.1, 0.1) ) THEN
+                ErrWrite \W, "Motion Error", "First traj pt <> current pose. Dropping trajectory.";
+                clear_trajectory;
+                ! yes, GOTOs are ugly, but otherwise we'd end up with ladders
+                GOTO skip_traj;
+            ENDIF
+
+            ! all checks passed, start execution of trajectory
             FOR current_index FROM 1 TO trajectory_size DO
                 target.robax := trajectory{current_index}.joint_pos;
                 target.extax := trajectory{current_index}.extax_pos;
 
-                skip_move := (current_index = 1) AND is_near(target, 0.1, 0.1);
-
                 stop_mode := DEFAULT_CORNER_DIST;  ! assume we're smoothing between points
                 IF (current_index = trajectory_size) stop_mode := fine;  ! stop at path end
 
-                ! Execute move command
-                IF (NOT skip_move)
+                ! Execute move command, but skip the first traj pt: we've already made sure
+                ! that the current pose == trajectory{1}.
+                IF (current_index <> 1) THEN
                     MoveAbsJ target, move_speed, \T:=trajectory{current_index}.duration, stop_mode, tool0;
+                ENDIF
             ENDFOR
 
+            skip_traj:
             trajectory_size := 0;  ! trajectory done
         ENDIF
-        
+
         WaitTime 0.05;  ! Throttle loop while waiting for new command
     ENDWHILE
 ERROR
@@ -104,9 +117,13 @@ LOCAL FUNC bool is_near(jointtarget target, num deg_tol, num mm_tol)
 ENDFUNC
 
 LOCAL PROC abort_trajectory()
+    clear_trajectory;
+    ExitCycle;  ! restart program
+ENDPROC
+
+LOCAL PROC clear_trajectory()
     trajectory_size := 0;  ! "clear" local trajectory
     clear_path;
-    ExitCycle;  ! restart program
 ENDPROC
 
 LOCAL PROC clear_path()
